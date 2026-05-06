@@ -432,7 +432,24 @@ pip install -r ai/requirements.txt
 # Step 2: 冒煙測試
 python -m ai.play_match --p1 mcts --p2 random --sims 100
 
-# Step 3: 跑 AlphaZero 訓練（過夜跑，用 nohup 背景執行）
+# Step 3: 跑 AlphaZero 訓練（過夜跑，背景執行）
+
+# --- Windows PowerShell ---
+Start-Job -ScriptBlock {
+    Set-Location "FOS brainstorming"
+    python -m ai.alphazero `
+        --iterations 15 `
+        --games-per-iter 30 `
+        --sims 300 `
+        --epochs 15 `
+        --eval-games 20 `
+        --out-dir runs/main
+} | Out-Null
+# 或是直接開新視窗（可以看到輸出）：
+Start-Process powershell -ArgumentList '-NoExit', '-Command', `
+    'cd "FOS brainstorming"; python -m ai.alphazero --iterations 15 --games-per-iter 30 --sims 300 --epochs 15 --eval-games 20 --out-dir runs/main 2>&1 | Tee-Object training.log'
+
+# --- Linux / macOS ---
 nohup python -m ai.alphazero \
     --iterations 15 \
     --games-per-iter 30 \
@@ -443,6 +460,11 @@ nohup python -m ai.alphazero \
     > training.log 2>&1 &
 
 # Step 4: 看進度
+
+# Windows PowerShell
+Get-Content training.log -Wait
+
+# Linux / macOS
 tail -f training.log
 
 # Step 5: 訓練完用 best.pt 對戰
