@@ -31,6 +31,12 @@ DEFAULT_DECK = [
     "HEAL", "MOVE", "CUBES", "ADCW",
 ]
 
+# Richer deck that exercises move actions (MOVE card adds number_of_movings)
+MOVE_DECK = [
+    "ADCW", "TANKW", "ASSW", "HFW", "LFW", "APTW", "SPW", "APW",
+    "HEAL", "MOVE", "MOVE", "CUBES",
+]
+
 
 def _silent() -> GameLogger:
     return GameLogger(enable_file=False, enable_console=False, enable_jsonl=False)
