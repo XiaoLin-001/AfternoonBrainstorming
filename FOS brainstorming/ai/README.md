@@ -182,6 +182,11 @@ for iteration in 1..N:
 
 完整指南：從零開始訓練到拿到一個能對戰的AI模型。
 
+> **⚠️ Shell 語法提醒**：以下範例用 bash 多行語法（行尾 `\`）。
+> - **Linux / macOS / WSL / Git Bash**：直接複製貼上即可。
+> - **Windows PowerShell**：請把 `\` 改成反引號 `` ` ``，或乾脆把整個指令合併成**一行**（最穩）。
+> - **Windows CMD**：把 `\` 改成 `^`，或合併成一行。
+
 ### 0. 環境準備
 
 所有指令都在 `FOS brainstorming/` 資料夾下執行（就是 `main.py` 所在的資料夾）。
