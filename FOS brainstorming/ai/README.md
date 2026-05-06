@@ -61,59 +61,45 @@ All commands run from `FOS brainstorming/` (the directory containing `main.py`).
 
 ### Smoke test — MCTS vs random
 
-```bash
+```
 python -m ai.play_match --p1 mcts --p2 random --sims 200 --verbose
 ```
 
 ### Generate self-play data (single-process)
 
-```bash
+```
 python -m ai.self_play --games 50 --sims 200 --out data/selfplay.jsonl
 ```
 
 ### Generate with multiprocessing
 
-```bash
+```
 python -m ai.self_play --games 100 --sims 200 --workers 4 --out data/selfplay.jsonl
 ```
 
 ### Generate with trained model priors (PUCT mode)
 
-```bash
-python -m ai.self_play --games 50 --sims 200 \
-    --checkpoint checkpoints/best.pt --out data/selfplay.jsonl
+```
+python -m ai.self_play --games 50 --sims 200 --checkpoint checkpoints/best.pt --out data/selfplay.jsonl
 ```
 
 ### Train the distilled network
 
-```bash
+```
 pip install torch
-python -m ai.train \
-    --data data/selfplay.jsonl \
-    --epochs 50 \
-    --out checkpoints/policy.pt
+python -m ai.train --data data/selfplay.jsonl --epochs 50 --out checkpoints/policy.pt
 ```
 
 ### Resume training on new data (iterative)
 
-```bash
-python -m ai.train \
-    --data data/new_games.jsonl \
-    --resume checkpoints/policy.pt \
-    --epochs 15 \
-    --out checkpoints/policy_v2.pt
+```
+python -m ai.train --data data/new_games.jsonl --resume checkpoints/policy.pt --epochs 15 --out checkpoints/policy_v2.pt
 ```
 
 ### Full AlphaZero loop
 
-```bash
-python -m ai.alphazero \
-    --iterations 20 \
-    --games-per-iter 30 \
-    --sims 300 \
-    --epochs 20 \
-    --eval-games 30 \
-    --out-dir runs/az_v1
+```
+python -m ai.alphazero --iterations 20 --games-per-iter 30 --sims 300 --epochs 20 --eval-games 30 --out-dir runs/az_v1
 ```
 
 ### Use the trained bot in code
@@ -182,26 +168,18 @@ for iteration in 1..N:
 
 完整指南：從零開始訓練到拿到一個能對戰的AI模型。
 
-> **⚠️ Shell 語法提醒**：以下範例用 bash 多行語法（行尾 `\`）。
-> - **Linux / macOS / WSL / Git Bash**：直接複製貼上即可。
-> - **Windows PowerShell**：請把 `\` 改成反引號 `` ` ``，或乾脆把整個指令合併成**一行**（最穩）。
-> - **Windows CMD**：把 `\` 改成 `^`，或合併成一行。
-
 ### 0. 環境準備
 
 所有指令都在 `FOS brainstorming/` 資料夾下執行（就是 `main.py` 所在的資料夾）。
 
-```bash
+```
 cd "FOS brainstorming"
 ```
 
 安裝依賴：
 
-```bash
-# 遊戲本體
+```
 pip install -r requirements.txt
-
-# AI訓練（torch、numpy）
 pip install -r ai/requirements.txt
 ```
 
@@ -214,7 +192,7 @@ pip install -r ai/requirements.txt
 
 跑一場 MCTS vs 隨機 對戰，看到winner就代表全部能跑：
 
-```bash
+```
 python -m ai.play_match --p1 mcts --p2 random --sims 100
 ```
 
@@ -229,14 +207,8 @@ winner=player1 score=-11 turns=11
 
 第一輪沒有訓練好的模型，先用純MCTS自我對弈來產生資料。
 
-```bash
-python -m ai.self_play \
-    --games 50 \
-    --sims 200 \
-    --workers 4 \
-    --max-turns 120 \
-    --temp-cutoff 10 \
-    --out data/iter0.jsonl
+```
+python -m ai.self_play --games 50 --sims 200 --workers 4 --max-turns 120 --temp-cutoff 10 --out data/iter0.jsonl
 ```
 
 **參數說明：**
@@ -258,13 +230,8 @@ python -m ai.self_play \
 
 ### 3. 第二階段：訓練第一個policy/value網路
 
-```bash
-python -m ai.train \
-    --data data/iter0.jsonl \
-    --epochs 30 \
-    --batch-size 256 \
-    --lr 1e-3 \
-    --out checkpoints/iter1.pt
+```
+python -m ai.train --data data/iter0.jsonl --epochs 30 --batch-size 256 --lr 1e-3 --out checkpoints/iter1.pt
 ```
 
 **訓練輸出長這樣：**
@@ -288,14 +255,8 @@ python -m ai.train \
 
 把 `iter1.pt` 當作MCTS的policy prior再跑一輪自我對弈，這次資料品質更高：
 
-```bash
-python -m ai.self_play \
-    --games 50 \
-    --sims 300 \
-    --workers 4 \
-    --checkpoint checkpoints/iter1.pt \
-    --append \
-    --out data/iter0.jsonl
+```
+python -m ai.self_play --games 50 --sims 300 --workers 4 --checkpoint checkpoints/iter1.pt --append --out data/iter0.jsonl
 ```
 
 **重點：**
@@ -307,12 +268,8 @@ python -m ai.self_play \
 
 ### 5. 第四階段：用累積資料再訓練
 
-```bash
-python -m ai.train \
-    --data data/iter0.jsonl \
-    --resume checkpoints/iter1.pt \
-    --epochs 20 \
-    --out checkpoints/iter2.pt
+```
+python -m ai.train --data data/iter0.jsonl --resume checkpoints/iter1.pt --epochs 20 --out checkpoints/iter2.pt
 ```
 
 `--resume` 讓模型從上一輪權重繼續，不從頭訓練。
@@ -323,16 +280,8 @@ python -m ai.train \
 
 上面 2→3→4→5 的循環，`alphazero.py` 都幫你做了：
 
-```bash
-python -m ai.alphazero \
-    --iterations 10 \
-    --games-per-iter 30 \
-    --sims 300 \
-    --epochs 15 \
-    --eval-games 20 \
-    --promote-threshold 0.55 \
-    --max-buffer 50000 \
-    --out-dir runs/az_run1
+```
+python -m ai.alphazero --iterations 10 --games-per-iter 30 --sims 300 --epochs 15 --eval-games 20 --promote-threshold 0.55 --max-buffer 50000 --out-dir runs/az_run1
 ```
 
 **它會做什麼：**
@@ -371,9 +320,7 @@ action = bot.pick(game_state, player="player1")
 
 或在command line測試強度：
 
-```bash
-# 訓練好的AI vs 純MCTS
-python -c "
+```python
 import sys; sys.path.insert(0, '.')
 from ai.play_match import play
 from ai.bot import PolicyBot, MCTSBot
@@ -388,7 +335,6 @@ for i in range(20):
         w, _ = play(baseline, trained, seed=i)
         if w == 'player2': wins += 1
 print(f'勝率：{wins}/20 = {wins*5}%')
-"
 ```
 
 ---
@@ -411,15 +357,13 @@ print(f'勝率：{wins}/20 = {wins*5}%')
 - 加大 `--games-per-iter` 收更多資料
 
 **看訓練資料分布：**
-```bash
-python -c "
+```python
 import json
 samples = [json.loads(l) for l in open('runs/az_run1/replay.jsonl')]
 print(f'總筆數: {len(samples)}')
 from collections import Counter
-print(f'勝負: {Counter(s[\"value\"] for s in samples)}')
-print(f'p1樣本: {sum(1 for s in samples if s[\"perspective\"]==\"player1\")}')
-"
+print(f'勝負: {Counter(s["value"] for s in samples)}')
+print(f'p1樣本: {sum(1 for s in samples if s["perspective"]=="player1")}')
 ```
 
 ---
@@ -428,7 +372,7 @@ print(f'p1樣本: {sum(1 for s in samples if s[\"perspective\"]==\"player1\")}')
 
 第一次玩，直接跑這個就對了：
 
-```bash
+```
 # Step 1: 環境
 cd "FOS brainstorming"
 pip install -r requirements.txt
@@ -437,44 +381,11 @@ pip install -r ai/requirements.txt
 # Step 2: 冒煙測試
 python -m ai.play_match --p1 mcts --p2 random --sims 100
 
-# Step 3: 跑 AlphaZero 訓練（過夜跑，背景執行）
+# Step 3: 跑 AlphaZero 訓練
+python -m ai.alphazero --iterations 15 --games-per-iter 30 --sims 300 --epochs 15 --eval-games 20 --out-dir runs/main
 
-# --- Windows PowerShell ---
-Start-Job -ScriptBlock {
-    Set-Location "FOS brainstorming"
-    python -m ai.alphazero `
-        --iterations 15 `
-        --games-per-iter 30 `
-        --sims 300 `
-        --epochs 15 `
-        --eval-games 20 `
-        --out-dir runs/main
-} | Out-Null
-# 或是直接開新視窗（可以看到輸出）：
-Start-Process powershell -ArgumentList '-NoExit', '-Command', `
-    'cd "FOS brainstorming"; python -m ai.alphazero --iterations 15 --games-per-iter 30 --sims 300 --epochs 15 --eval-games 20 --out-dir runs/main 2>&1 | Tee-Object training.log'
-
-# --- Linux / macOS ---
-nohup python -m ai.alphazero \
-    --iterations 15 \
-    --games-per-iter 30 \
-    --sims 300 \
-    --epochs 15 \
-    --eval-games 20 \
-    --out-dir runs/main \
-    > training.log 2>&1 &
-
-# Step 4: 看進度
-
-# Windows PowerShell
-Get-Content training.log -Wait
-
-# Linux / macOS
-tail -f training.log
-
-# Step 5: 訓練完用 best.pt 對戰
-python -m ai.play_match --p1 mcts --p2 mcts --sims 300  # 比賽
+# Step 4: 訓練完用 best.pt 對戰
+python -m ai.play_match --p1 mcts --p2 mcts --sims 300
 ```
 
 **完成！** `runs/main/best.pt` 就是你的AI。
-
