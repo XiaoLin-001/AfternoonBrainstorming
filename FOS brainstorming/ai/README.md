@@ -99,7 +99,7 @@ python -m ai.train --data data/new_games.jsonl --resume checkpoints/policy.pt --
 ### Full AlphaZero loop
 
 ```
-python -m ai.alphazero --iterations 20 --games-per-iter 30 --sims 300 --epochs 20 --eval-games 30 --out-dir runs/az_v1
+python -m ai.alphazero --iterations 20 --games-per-iter 30 --sims 300 --workers 4 --epochs 20 --eval-games 30 --out-dir runs/az_v1
 ```
 
 ### Use the trained bot in code
@@ -281,7 +281,7 @@ python -m ai.train --data data/iter0.jsonl --resume checkpoints/iter1.pt --epoch
 上面 2→3→4→5 的循環，`alphazero.py` 都幫你做了：
 
 ```
-python -m ai.alphazero --iterations 10 --games-per-iter 30 --sims 300 --epochs 15 --eval-games 20 --promote-threshold 0.55 --max-buffer 50000 --out-dir runs/az_run1
+python -m ai.alphazero --iterations 10 --games-per-iter 30 --sims 300 --workers 4 --epochs 15 --eval-games 20 --promote-threshold 0.55 --max-buffer 50000 --out-dir runs/az_run1
 ```
 
 **它會做什麼：**
@@ -381,8 +381,8 @@ pip install -r ai/requirements.txt
 # Step 2: 冒煙測試
 python -m ai.play_match --p1 mcts --p2 random --sims 100
 
-# Step 3: 跑 AlphaZero 訓練
-python -m ai.alphazero --iterations 15 --games-per-iter 30 --sims 300 --epochs 15 --eval-games 20 --out-dir runs/main
+# Step 3: 跑 AlphaZero 訓練（--workers 設成 CPU 實體核心數）
+python -m ai.alphazero --iterations 15 --games-per-iter 30 --sims 300 --workers 4 --epochs 15 --eval-games 20 --out-dir runs/main
 
 # Step 4: 訓練完用 best.pt 對戰
 python -m ai.play_match --p1 mcts --p2 mcts --sims 300

@@ -34,7 +34,7 @@ from core.battling_dispatcher import BattlingDispatcher
 from .action_space import apply_action
 from .bot import MCTSBot
 from .play_match import make_game, play
-from .self_play import _build_policy_fn, play_one_game
+from .self_play import _build_policy_fn, _worker_init, _worker_task, play_one_game
 from .state_utils import is_terminal, winner
 
 
@@ -69,13 +69,31 @@ def _generate_selfplay(
     d_alpha: float,
     d_eps: float,
     rng: random.Random,
+    workers: int = 1,
 ) -> int:
     """Run n_games self-play games and append samples to out_file."""
-    policy_fn = _build_policy_fn(checkpoint) if checkpoint else None
+    seeds = [rng.randint(0, 2**31 - 1) for _ in range(n_games)]
     total = 0
+
+    if workers > 1:
+        import multiprocessing as mp
+        worker_args = [
+            (sims, depth, max_turns, temp_cutoff, seed, checkpoint, d_alpha, d_eps)
+            for seed in seeds
+        ]
+        with open(out_file, "a", encoding="utf-8") as f:
+            with mp.Pool(processes=workers, initializer=_worker_init) as pool:
+                for g, (samples, w, seed) in enumerate(pool.imap_unordered(_worker_task, worker_args)):
+                    for s in samples:
+                        f.write(json.dumps(s) + "\n")
+                    f.flush()
+                    total += len(samples)
+                    print(f"[az selfplay] game {g+1}/{n_games} winner={w} samples={len(samples)} (seed={seed})")
+        return total
+
+    policy_fn = _build_policy_fn(checkpoint) if checkpoint else None
     with open(out_file, "a", encoding="utf-8") as f:
-        for _ in range(n_games):
-            seed = rng.randint(0, 2**31 - 1)
+        for g, seed in enumerate(seeds):
             samples, w = play_one_game(
                 simulations=sims,
                 rollout_depth=depth,
@@ -88,7 +106,9 @@ def _generate_selfplay(
             )
             for s in samples:
                 f.write(json.dumps(s) + "\n")
+            f.flush()
             total += len(samples)
+            print(f"[az selfplay] game {g+1}/{n_games} winner={w} samples={len(samples)} (seed={seed})")
     return total
 
 
@@ -183,6 +203,8 @@ def main() -> None:
     ap.add_argument("--seed",          type=int,   default=None)
     ap.add_argument("--max-buffer",    type=int,   default=100_000,
                     help="max samples kept in replay buffer (FIFO)")
+    ap.add_argument("--workers",       type=int,   default=1,
+                    help="parallel self-play workers (multiprocessing)")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -200,7 +222,8 @@ def main() -> None:
         print(f"{'='*60}")
 
         # 1. Self-play
-        print(f"[az] self-play: {args.games_per_iter} games, {args.sims} sims ...")
+        print(f"[az] self-play: {args.games_per_iter} games, {args.sims} sims, "
+              f"{args.workers} worker(s) ...")
         n_new = _generate_selfplay(
             out_file=replay_file,
             n_games=args.games_per_iter,
@@ -212,6 +235,7 @@ def main() -> None:
             d_alpha=args.dirichlet_alpha,
             d_eps=args.dirichlet_eps,
             rng=rng,
+            workers=args.workers,
         )
         print(f"[az] generated {n_new} new samples")
 
