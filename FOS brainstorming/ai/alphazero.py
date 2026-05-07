@@ -161,7 +161,7 @@ def _train(
                 loss = policy_weight * pol_l + value_weight * val_l
                 opt.zero_grad(); loss.backward()
                 nn.utils.clip_grad_norm_(net.parameters(), grad_clip)
-                opt.step(); t_loss += float(loss); nb += 1
+                opt.step(); t_loss += loss.item(); nb += 1
             sched.step()
             if (ep + 1) % 5 == 0 or ep == epochs - 1:
                 print(f"[az train] epoch {ep+1}/{epochs} loss={t_loss/max(nb,1):.4f}")

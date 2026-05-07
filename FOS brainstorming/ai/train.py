@@ -52,11 +52,12 @@ if HAS_TORCH:
 
         def __getitem__(self, i: int):
             r = self.records[i]
+            chosen = r.get("chosen_index")
             return (
                 torch.tensor(r["features"], dtype=torch.float32),
                 torch.tensor(r["policy"],   dtype=torch.float32),
                 torch.tensor(r["value"],    dtype=torch.float32),
-                r.get("chosen_index", 0),
+                chosen if chosen is not None else -1,
             )
 
 
@@ -144,8 +145,8 @@ def main() -> None:
             nn.utils.clip_grad_norm_(net.parameters(), args.grad_clip)
             opt.step()
 
-            t_loss += float(loss); t_pol += float(pol_loss); t_val_loss += float(val_loss)
-            t_acc  += _accuracy(logits, chosen)
+            t_loss += loss.item(); t_pol += pol_loss.item(); t_val_loss += val_loss.item()
+            t_acc  += _accuracy(logits.detach(), chosen)
             nb += 1
 
         scheduler.step()
@@ -162,7 +163,7 @@ def main() -> None:
                 val_loss = (value - v).pow(2).mean()
                 loss = args.policy_weight * pol_loss + args.value_weight * val_loss
 
-                v_loss += float(loss); v_pol += float(pol_loss); v_val_loss += float(val_loss)
+                v_loss += loss.item(); v_pol += pol_loss.item(); v_val_loss += val_loss.item()
                 v_acc  += _accuracy(logits, chosen)
                 vb += 1
 
