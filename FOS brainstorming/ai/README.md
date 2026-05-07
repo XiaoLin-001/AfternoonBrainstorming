@@ -296,8 +296,14 @@ runs/az_run1/
 ├── candidate_iter001.pt      # 每輪訓練產出
 ├── candidate_iter002.pt
 ├── ...
+├── iter001.selfplay.done     # 階段 marker（自我對弈完成）
+├── iter001.eval.json         # 階段 marker（評估 + 升級結果）
 └── best.pt                   # 目前最強模型（推薦使用）
 ```
+
+**斷點續跑（自動）：** 重複下同一條 `python -m ai.alphazero ...` 指令，
+它會掃 marker 檔，已完成的階段自動跳過、從上次中斷處繼續。要強制重跑
+全部加 `--fresh`。
 
 **訓練時間估計（4核CPU）：**
 

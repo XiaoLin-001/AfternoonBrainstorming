@@ -205,75 +205,98 @@ def main() -> None:
                     help="max samples kept in replay buffer (FIFO)")
     ap.add_argument("--workers",       type=int,   default=1,
                     help="parallel self-play workers (multiprocessing)")
+    ap.add_argument("--fresh",         action="store_true",
+                    help="ignore stage markers and rerun every stage from scratch")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     replay_file = str(out_dir / "replay.jsonl")
-    best_ckpt: Optional[str] = None
+    best_path = out_dir / "best.pt"
+    best_ckpt: Optional[str] = str(best_path) if (not args.fresh and best_path.exists()) else None
     rng = random.Random(args.seed or random.randint(0, 2**31 - 1))
 
     print(f"[az] starting AlphaZero loop — {args.iterations} iterations")
     print(f"[az] output dir: {out_dir}")
+    if best_ckpt:
+        print(f"[az] resuming with existing best.pt as prior")
 
     for it in range(1, args.iterations + 1):
         print(f"\n{'='*60}")
         print(f"[az] ===  ITERATION {it}/{args.iterations}  ===")
         print(f"{'='*60}")
 
-        # 1. Self-play
-        print(f"[az] self-play: {args.games_per_iter} games, {args.sims} sims, "
-              f"{args.workers} worker(s) ...")
-        n_new = _generate_selfplay(
-            out_file=replay_file,
-            n_games=args.games_per_iter,
-            sims=args.sims,
-            depth=args.rollout_depth,
-            max_turns=args.max_turns,
-            temp_cutoff=args.temp_cutoff,
-            checkpoint=best_ckpt,
-            d_alpha=args.dirichlet_alpha,
-            d_eps=args.dirichlet_eps,
-            rng=rng,
-            workers=args.workers,
-        )
-        print(f"[az] generated {n_new} new samples")
+        sp_marker   = out_dir / f"iter{it:03d}.selfplay.done"
+        candidate_ckpt = str(out_dir / f"candidate_iter{it:03d}.pt")
+        eval_marker = out_dir / f"iter{it:03d}.eval.json"
 
-        # Trim replay buffer (keep most recent max_buffer lines)
-        _trim_replay(replay_file, args.max_buffer)
+        # 1. Self-play
+        if not args.fresh and sp_marker.exists():
+            n_new = json.loads(sp_marker.read_text()).get("samples", 0)
+            print(f"[az] [skip] self-play already done ({n_new} samples) — {sp_marker.name}")
+        else:
+            print(f"[az] self-play: {args.games_per_iter} games, {args.sims} sims, "
+                  f"{args.workers} worker(s) ...")
+            n_new = _generate_selfplay(
+                out_file=replay_file,
+                n_games=args.games_per_iter,
+                sims=args.sims,
+                depth=args.rollout_depth,
+                max_turns=args.max_turns,
+                temp_cutoff=args.temp_cutoff,
+                checkpoint=best_ckpt,
+                d_alpha=args.dirichlet_alpha,
+                d_eps=args.dirichlet_eps,
+                rng=rng,
+                workers=args.workers,
+            )
+            print(f"[az] generated {n_new} new samples")
+            _trim_replay(replay_file, args.max_buffer)
+            sp_marker.write_text(json.dumps({"samples": n_new, "prior": best_ckpt}))
 
         # 2. Train
-        candidate_ckpt = str(out_dir / f"candidate_iter{it:03d}.pt")
-        print(f"[az] training {args.epochs} epochs ...")
-        _train(
-            data_file=replay_file,
-            out_ckpt=candidate_ckpt,
-            resume=best_ckpt,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            hidden=args.hidden,
-            lr=args.lr,
-            grad_clip=args.grad_clip,
-            policy_weight=args.policy_weight,
-            value_weight=args.value_weight,
-        )
-
-        if not Path(candidate_ckpt).exists():
-            print("[az] training produced no checkpoint — keeping current best")
-            continue
-
-        # 3. Evaluate
-        print(f"[az] evaluating candidate vs best ({args.eval_games} games) ...")
-        wr = _win_rate(candidate_ckpt, best_ckpt, args.eval_games, args.sims)
-        print(f"[az] candidate win rate = {wr*100:.1f}% (threshold={args.promote_threshold*100:.0f}%)")
-
-        # 4. Promote
-        if wr >= args.promote_threshold:
-            print(f"[az] PROMOTED candidate → new best")
-            best_ckpt = str(out_dir / "best.pt")
-            shutil.copy2(candidate_ckpt, best_ckpt)
+        if not args.fresh and Path(candidate_ckpt).exists():
+            print(f"[az] [skip] candidate already exists — {Path(candidate_ckpt).name}")
         else:
-            print(f"[az] candidate not promoted (win rate too low)")
+            print(f"[az] training {args.epochs} epochs ...")
+            _train(
+                data_file=replay_file,
+                out_ckpt=candidate_ckpt,
+                resume=best_ckpt,
+                epochs=args.epochs,
+                batch_size=args.batch_size,
+                hidden=args.hidden,
+                lr=args.lr,
+                grad_clip=args.grad_clip,
+                policy_weight=args.policy_weight,
+                value_weight=args.value_weight,
+            )
+            if not Path(candidate_ckpt).exists():
+                print("[az] training produced no checkpoint — keeping current best")
+                continue
+
+        # 3. Evaluate + 4. Promote
+        if not args.fresh and eval_marker.exists():
+            info = json.loads(eval_marker.read_text())
+            wr = info.get("win_rate", 0.0)
+            promoted = info.get("promoted", False)
+            print(f"[az] [skip] eval already done — win_rate={wr*100:.1f}% promoted={promoted}")
+            if promoted:
+                best_ckpt = str(best_path)
+        else:
+            print(f"[az] evaluating candidate vs best ({args.eval_games} games) ...")
+            wr = _win_rate(candidate_ckpt, best_ckpt, args.eval_games, args.sims)
+            print(f"[az] candidate win rate = {wr*100:.1f}% (threshold={args.promote_threshold*100:.0f}%)")
+
+            promoted = wr >= args.promote_threshold
+            if promoted:
+                print(f"[az] PROMOTED candidate → new best")
+                best_ckpt = str(best_path)
+                shutil.copy2(candidate_ckpt, best_ckpt)
+            else:
+                print(f"[az] candidate not promoted (win rate too low)")
+
+            eval_marker.write_text(json.dumps({"win_rate": wr, "promoted": promoted}))
 
     print(f"\n[az] done. best model: {best_ckpt or 'none (pure MCTS)'}")
 
