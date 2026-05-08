@@ -148,7 +148,7 @@ def _train(
 
         opt = optim.Adam(net.parameters(), lr=lr, weight_decay=1e-4)
         sched = CosineAnnealingLR(opt, T_max=epochs, eta_min=1e-5)
-        loader = DataLoader(ds, batch_size=batch_size, shuffle=True)
+        loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=True)
 
         for ep in range(epochs):
             net.train()
