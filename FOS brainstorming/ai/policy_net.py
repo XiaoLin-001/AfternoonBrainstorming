@@ -1,14 +1,15 @@
 """Tiny policy/value network for distilling MCTS results.
 
-Action index layout (fixed-size ACTION_DIM = 369):
+Action index layout (fixed-size ACTION_DIM = 433):
   [0]                                 end_turn
   [1 .. 16]                           attack(cell)          (CELLS = 16)
-  [17 .. 80]                          play_card(hand, cell) (HAND_SLOTS * CELLS = 64)
-  [81 .. 96]                          heal(cell)            (CELLS = 16)
-  [97 .. 112]                         spawn_cube(cell)      (CELLS = 16)
-  [113 .. 368]                        move(from_cell, to_cell) (CELLS*CELLS = 256)
+  [17 .. 144]                         play_card(hand, cell) (HAND_SLOTS * CELLS = 128)
+  [145 .. 160]                        heal(cell)            (CELLS = 16)
+  [161 .. 176]                        spawn_cube(cell)      (CELLS = 16)
+  [177 .. 432]                        move(from_cell, to_cell) (CELLS*CELLS = 256)
 
-Total = 1 + 16 + 64 + 16 + 16 + 256 = 369
+HAND_SLOTS bumped from 4 → 8 to cover the real maximum hand size; with
+HAND_SLOTS=4 every play_card targeting hand[4..7] was silently dropped.
 """
 from __future__ import annotations
 
@@ -29,15 +30,15 @@ from core.game_action import GameAction
 BOARD_W = 4
 BOARD_H = 4
 CELLS = BOARD_W * BOARD_H   # 16
-HAND_SLOTS = 4
+HAND_SLOTS = 8
 
 _BASE_END   = 0
 _BASE_ATK   = 1
-_BASE_PLAY  = _BASE_ATK  + CELLS            # 17
-_BASE_HEAL  = _BASE_PLAY + HAND_SLOTS * CELLS  # 81
-_BASE_CUBE  = _BASE_HEAL + CELLS            # 97
-_BASE_MOVE  = _BASE_CUBE + CELLS            # 113
-ACTION_DIM  = _BASE_MOVE + CELLS * CELLS    # 369
+_BASE_PLAY  = _BASE_ATK  + CELLS               # 17
+_BASE_HEAL  = _BASE_PLAY + HAND_SLOTS * CELLS  # 145
+_BASE_CUBE  = _BASE_HEAL + CELLS               # 161
+_BASE_MOVE  = _BASE_CUBE + CELLS               # 177
+ACTION_DIM  = _BASE_MOVE + CELLS * CELLS       # 433
 
 
 def action_to_index(action: GameAction) -> Optional[int]:

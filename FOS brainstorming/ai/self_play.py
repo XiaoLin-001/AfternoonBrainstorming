@@ -27,6 +27,12 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(it, **kw):  # type: ignore[misc]
+        return it
+
 from core.battling_dispatcher import BattlingDispatcher
 
 from .action_space import apply_action
@@ -71,12 +77,14 @@ def play_one_game(
     policy_fn: Optional[PolicyFn] = None,
     dirichlet_alpha: float = 0.3,
     dirichlet_eps: float = 0.25,
+    show_progress: bool = False,
 ) -> Tuple[List[dict], Optional[str]]:
     state = make_game(seed=seed)
     dispatcher = BattlingDispatcher(state, mode="local")
     samples: List[dict] = []
 
     safety = 0
+    turn_bar = tqdm(total=max_turns, desc="  Turns", unit="turn", leave=False, disable=not show_progress)
     while not is_terminal(state, max_turns):
         if safety > max_turns * 50:
             break
@@ -110,7 +118,11 @@ def play_one_game(
 
         apply_action(dispatcher, state, chosen)
         safety += 1
+        if show_progress:
+            turn_bar.update(1)
+            turn_bar.set_postfix(player=cur, action=str(chosen)[:20] if chosen else "")
 
+    turn_bar.close()
     final_v_p1 = reward_for(state, "player1", max_turns)
     for s in samples:
         s["value"] = final_v_p1 if s["perspective"] == "player1" else -final_v_p1
@@ -181,23 +193,28 @@ def main() -> None:
         if args.workers > 1:
             import multiprocessing as mp
             with mp.Pool(processes=args.workers, initializer=_worker_init) as pool:
-                for g, (samples, win, seed) in enumerate(pool.imap_unordered(_worker_task, worker_args)):
+                game_bar = tqdm(pool.imap_unordered(_worker_task, worker_args),
+                                total=args.games, desc="Games", unit="game")
+                for g, (samples, win, seed) in enumerate(game_bar):
                     for s in samples:
                         f.write(json.dumps(s) + "\n")
                     f.flush()
                     total_samples += len(samples)
                     key = win if win in ("player1", "player2") else "draw"
                     win_counts[key] += 1
+                    game_bar.set_postfix(winner=win or "draw", samples=len(samples),
+                                         p1=win_counts["player1"], p2=win_counts["player2"])
                     print(f"[selfplay] game {g+1}/{args.games} winner={win} "
                           f"samples={len(samples)} (seed={seed})")
         else:
             policy_fn = _build_policy_fn(args.checkpoint) if args.checkpoint else None
-            for g, task in enumerate(worker_args):
+            game_bar = tqdm(enumerate(worker_args), total=args.games, desc="Games", unit="game")
+            for g, task in game_bar:
                 sims, depth, max_turns, temp_cutoff, seed, _ckpt, d_alpha, d_eps = task
                 samples, win = play_one_game(
                     simulations=sims, rollout_depth=depth, max_turns=max_turns,
                     temp_cutoff=temp_cutoff, seed=seed, policy_fn=policy_fn,
-                    dirichlet_alpha=d_alpha, dirichlet_eps=d_eps,
+                    dirichlet_alpha=d_alpha, dirichlet_eps=d_eps, show_progress=True,
                 )
                 for s in samples:
                     f.write(json.dumps(s) + "\n")
@@ -205,6 +222,8 @@ def main() -> None:
                 total_samples += len(samples)
                 key = win if win in ("player1", "player2") else "draw"
                 win_counts[key] += 1
+                game_bar.set_postfix(winner=win or "draw", samples=len(samples),
+                                     p1=win_counts["player1"], p2=win_counts["player2"])
                 print(f"[selfplay] game {g+1}/{args.games} winner={win} "
                       f"samples={len(samples)} (seed={seed})")
 

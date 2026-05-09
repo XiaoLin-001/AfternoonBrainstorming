@@ -28,7 +28,7 @@ CardFactory.register_all()
 
 DEFAULT_DECK = [
     "ADCW", "TANKW", "ASSW", "HFW", "LFW", "APTW", "SPW", "APW",
-    "HEAL", "MOVE", "CUBES", "ADCW",
+    "HEAL", "HEAL", "MOVE", "CUBES",
 ]
 
 # Richer deck that exercises move actions (MOVE card adds number_of_movings)

@@ -237,11 +237,11 @@ class MCTS:
 
     def _rollout_policy(self, state: GameState, actions: List[GameAction]) -> GameAction:
         weights = {
-            "attack":     5.0,
-            "play_card":  2.5,
+            "attack":     3.0,
+            "play_card":  3.0,
+            "heal":       2.5,
+            "spawn_cube": 2.0,
             "move":       1.5,
-            "heal":       1.5,
-            "spawn_cube": 1.0,
             "end_turn":   0.3,
         }
         wts = [weights.get(a.action_type, 1.0) for a in actions]

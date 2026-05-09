@@ -30,6 +30,12 @@ try:
 except ImportError:
     HAS_TORCH = False
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(it, **kw):  # type: ignore[misc]
+        return it
+
 from .encode import feature_dim
 from .policy_net import ACTION_DIM
 
@@ -128,12 +134,14 @@ def main() -> None:
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    for epoch in range(start_epoch, start_epoch + args.epochs):
+    epoch_bar = tqdm(range(start_epoch, start_epoch + args.epochs), desc="Epochs", unit="ep")
+    for epoch in epoch_bar:
         # --- train ---
         net.train()
         t_loss = t_pol = t_val_loss = t_acc = 0.0
         nb = 0
-        for x, pi, v, chosen in train_loader:
+        train_bar = tqdm(train_loader, desc="  Train", unit="batch", leave=False)
+        for x, pi, v, chosen in train_bar:
             logits, value = net(x)
             log_probs = torch.log_softmax(logits, dim=-1)
             pol_loss = -(pi * log_probs).sum(dim=-1).mean()
@@ -148,6 +156,7 @@ def main() -> None:
             t_loss += loss.item(); t_pol += pol_loss.item(); t_val_loss += val_loss.item()
             t_acc  += _accuracy(logits.detach(), chosen)
             nb += 1
+            train_bar.set_postfix(loss=f"{loss.item():.4f}", pol=f"{pol_loss.item():.4f}")
 
         scheduler.step()
 
@@ -156,7 +165,8 @@ def main() -> None:
         v_loss = v_pol = v_val_loss = v_acc = 0.0
         vb = 0
         with torch.no_grad():
-            for x, pi, v, chosen in val_loader:
+            val_bar = tqdm(val_loader, desc="  Val  ", unit="batch", leave=False)
+            for x, pi, v, chosen in val_bar:
                 logits, value = net(x)
                 log_probs = torch.log_softmax(logits, dim=-1)
                 pol_loss = -(pi * log_probs).sum(dim=-1).mean()
@@ -166,8 +176,14 @@ def main() -> None:
                 v_loss += loss.item(); v_pol += pol_loss.item(); v_val_loss += val_loss.item()
                 v_acc  += _accuracy(logits, chosen)
                 vb += 1
+                val_bar.set_postfix(loss=f"{loss.item():.4f}")
 
         ta = lambda x, n: x / max(n, 1)
+        epoch_bar.set_postfix(
+            trn=f"{ta(t_loss,nb):.4f}",
+            val=f"{ta(v_loss,vb):.4f}",
+            acc=f"{ta(t_acc,nb)*100:.1f}%",
+        )
         print(
             f"[train] epoch {epoch+1:3d} | "
             f"trn loss={ta(t_loss,nb):.4f} pol={ta(t_pol,nb):.4f} "

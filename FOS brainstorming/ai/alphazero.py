@@ -29,6 +29,12 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(it, **kw):  # type: ignore[misc]
+        return it
+
 from core.battling_dispatcher import BattlingDispatcher
 
 from .action_space import apply_action
@@ -38,14 +44,16 @@ from .self_play import _build_policy_fn, _worker_init, _worker_task, play_one_ga
 from .state_utils import is_terminal, winner
 
 
-def _win_rate(ckpt_new: str, ckpt_old: Optional[str], n_games: int, sims: int) -> float:
+def _win_rate(ckpt_new: str, ckpt_old: Optional[str], n_games: int, sims: int,
+              eval_sims: int = 0) -> float:
     """Return win rate of ckpt_new vs ckpt_old over n_games (alternating sides)."""
     from .bot import PolicyBot, MCTSBot
-    bot_new = PolicyBot(ckpt_new, fallback_simulations=sims)
-    bot_old = PolicyBot(ckpt_old, fallback_simulations=sims) if ckpt_old else MCTSBot(simulations=sims)
+    bot_new = PolicyBot(ckpt_new, fallback_simulations=sims, mcts_simulations=eval_sims)
+    bot_old = (PolicyBot(ckpt_old, fallback_simulations=sims, mcts_simulations=eval_sims)
+               if ckpt_old else MCTSBot(simulations=sims))
 
     wins = 0
-    for g in range(n_games):
+    for g in tqdm(range(n_games), desc="Eval games", unit="game", leave=False):
         if g % 2 == 0:
             b1, b2, new_is_p1 = bot_new, bot_old, True
         else:
@@ -83,17 +91,21 @@ def _generate_selfplay(
         ]
         with open(out_file, "a", encoding="utf-8") as f:
             with mp.Pool(processes=workers, initializer=_worker_init) as pool:
-                for g, (samples, w, seed) in enumerate(pool.imap_unordered(_worker_task, worker_args)):
+                game_bar = tqdm(pool.imap_unordered(_worker_task, worker_args),
+                                total=n_games, desc="Self-play", unit="game")
+                for g, (samples, w, seed) in enumerate(game_bar):
                     for s in samples:
                         f.write(json.dumps(s) + "\n")
                     f.flush()
                     total += len(samples)
+                    game_bar.set_postfix(winner=w or "draw", samples=len(samples))
                     print(f"[az selfplay] game {g+1}/{n_games} winner={w} samples={len(samples)} (seed={seed})")
         return total
 
     policy_fn = _build_policy_fn(checkpoint) if checkpoint else None
     with open(out_file, "a", encoding="utf-8") as f:
-        for g, seed in enumerate(seeds):
+        game_bar = tqdm(enumerate(seeds), total=n_games, desc="Self-play", unit="game")
+        for g, seed in game_bar:
             samples, w = play_one_game(
                 simulations=sims,
                 rollout_depth=depth,
@@ -103,11 +115,13 @@ def _generate_selfplay(
                 policy_fn=policy_fn,
                 dirichlet_alpha=d_alpha,
                 dirichlet_eps=d_eps,
+                show_progress=True,
             )
             for s in samples:
                 f.write(json.dumps(s) + "\n")
             f.flush()
             total += len(samples)
+            game_bar.set_postfix(winner=w or "draw", samples=len(samples))
             print(f"[az selfplay] game {g+1}/{n_games} winner={w} samples={len(samples)} (seed={seed})")
     return total
 
@@ -150,7 +164,8 @@ def _train(
         sched = CosineAnnealingLR(opt, T_max=epochs, eta_min=1e-5)
         loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=True)
 
-        for ep in range(epochs):
+        ep_bar = tqdm(range(epochs), desc="  Train epochs", unit="ep", leave=False)
+        for ep in ep_bar:
             net.train()
             t_loss = 0.0; nb = 0
             for x, pi, v, chosen in loader:
@@ -163,6 +178,7 @@ def _train(
                 nn.utils.clip_grad_norm_(net.parameters(), grad_clip)
                 opt.step(); t_loss += loss.item(); nb += 1
             sched.step()
+            ep_bar.set_postfix(loss=f"{t_loss/max(nb,1):.4f}")
             if (ep + 1) % 5 == 0 or ep == epochs - 1:
                 print(f"[az train] epoch {ep+1}/{epochs} loss={t_loss/max(nb,1):.4f}")
 
@@ -195,6 +211,8 @@ def main() -> None:
     ap.add_argument("--policy-weight", type=float, default=1.0)
     ap.add_argument("--value-weight",  type=float, default=1.0)
     ap.add_argument("--eval-games",    type=int,   default=20)
+    ap.add_argument("--eval-sims",     type=int,   default=0,
+                    help="MCTS sims per move during eval (0 = pure argmax)")
     ap.add_argument("--promote-threshold", type=float, default=0.55,
                     help="promote candidate if win_rate > this")
     ap.add_argument("--dirichlet-alpha", type=float, default=0.3)
@@ -221,7 +239,9 @@ def main() -> None:
     if best_ckpt:
         print(f"[az] resuming with existing best.pt as prior")
 
-    for it in range(1, args.iterations + 1):
+    iter_bar = tqdm(range(1, args.iterations + 1), desc="AlphaZero", unit="iter")
+    for it in iter_bar:
+        iter_bar.set_description(f"AlphaZero iter {it}/{args.iterations}")
         print(f"\n{'='*60}")
         print(f"[az] ===  ITERATION {it}/{args.iterations}  ===")
         print(f"{'='*60}")
@@ -285,7 +305,8 @@ def main() -> None:
                 best_ckpt = str(best_path)
         else:
             print(f"[az] evaluating candidate vs best ({args.eval_games} games) ...")
-            wr = _win_rate(candidate_ckpt, best_ckpt, args.eval_games, args.sims)
+            wr = _win_rate(candidate_ckpt, best_ckpt, args.eval_games, args.sims,
+                           eval_sims=args.eval_sims)
             print(f"[az] candidate win rate = {wr*100:.1f}% (threshold={args.promote_threshold*100:.0f}%)")
 
             promoted = wr >= args.promote_threshold
