@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>午後激盪 套牌對局模擬器</title>
+<style>
+  :root {
+    --bg: #14161c; --panel: #1d2129; --panel2: #232834; --line: #323a4a;
+    --text: #e6e9f0; --dim: #9aa3b5;
+    --p1: #4f8cff; --p2: #ff6363;
+    --blue: #5b8cff; --red: #ff5b5b; --white: #e8e8e8; --dkg: #8aa84f; --purple: #b06aff;
+    --accent: #ffc54d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    padding: 18px 26px 14px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 21px; letter-spacing: 1px; }
+  header .sub { color: var(--dim); font-size: 12.5px; }
+  nav { display: flex; gap: 8px; padding: 12px 26px 0; }
+  nav button {
+    background: var(--panel); color: var(--dim); border: 1px solid var(--line);
+    border-radius: 8px 8px 0 0; padding: 9px 22px; font-size: 14px; cursor: pointer;
+  }
+  nav button.active { color: var(--text); background: var(--panel2); border-bottom-color: var(--panel2); font-weight: bold; }
+  main { padding: 18px 26px 40px; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+
+  .controls {
+    display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 16px; margin-bottom: 16px;
+  }
+  .controls label { color: var(--dim); font-size: 13px; }
+  select, input[type=number] {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 10px; font-size: 14px;
+  }
+  .btn {
+    background: var(--accent); border: none; color: #1c1604; font-weight: bold;
+    border-radius: 8px; padding: 9px 20px; font-size: 14px; cursor: pointer;
+  }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+
+  /* ---- 觀戰版面 ---- */
+  .watch-grid { display: grid; grid-template-columns: minmax(380px, 520px) 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 980px) { .watch-grid { grid-template-columns: 1fr; } }
+
+  .boardwrap { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .scorebar { margin: 4px 2px 14px; }
+  .scorebar .names { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+  .scorebar .track {
+    position: relative; height: 22px; border-radius: 11px; overflow: hidden;
+    background: linear-gradient(90deg, var(--p1) 0%, #2a2f3c 50%, var(--p2) 100%);
+    border: 1px solid var(--line);
+  }
+  .scorebar .needle {
+    position: absolute; top: -2px; width: 4px; height: 26px; background: #fff; border-radius: 2px;
+    transition: left .25s;
+  }
+  .scorebar .val { text-align: center; font-size: 12px; color: var(--dim); margin-top: 4px; }
+
+  .board {
+    display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr);
+    gap: 6px; aspect-ratio: 1;
+  }
+  .cell {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 9px;
+    position: relative; display: flex; align-items: center; justify-content: center;
+  }
+  .unit {
+    width: 92%; height: 92%; border-radius: 8px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1px; position: relative;
+    border: 2px solid transparent; font-size: 12px;
+  }
+  .unit.p1 { border-color: var(--p1); background: rgba(79,140,255,.10); }
+  .unit.p2 { border-color: var(--p2); background: rgba(255,99,99,.10); }
+  .unit.neutral { border-color: #777; background: rgba(170,170,170,.08); }
+  .unit .glyph { font-size: 21px; line-height: 1; }
+  .unit .uname { font-size: 10.5px; color: var(--dim); }
+  .unit .stats { font-weight: bold; font-size: 12.5px; }
+  .unit .armor { position: absolute; top: 3px; right: 5px; font-size: 10.5px; color: #ffd76a; }
+  .unit.numb { opacity: .45; }
+  .unit .zz { position: absolute; top: 1px; left: 5px; font-size: 12px; }
+
+  .sidecol { display: flex; flex-direction: column; gap: 14px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .panel h3 { font-size: 13.5px; color: var(--dim); margin-bottom: 9px; letter-spacing: 1px; }
+  .res-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13.5px; margin-bottom: 6px; }
+  .res-row b { color: var(--accent); }
+  .p1c { color: var(--p1); font-weight: bold; }
+  .p2c { color: var(--p2); font-weight: bold; }
+  .hand-list { font-size: 12.5px; color: var(--dim); line-height: 1.7; word-break: break-all; }
+
+  .playctrl { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  .playctrl input[type=range] { flex: 1; min-width: 120px; }
+  .steplabel { font-size: 12.5px; color: var(--dim); min-width: 90px; text-align: right; }
+
+  #log {
+    height: 300px; overflow-y: auto; font-size: 12.5px; line-height: 1.65;
+    color: var(--dim); white-space: pre-wrap;
+  }
+  #log .hl { color: var(--text); }
+  #log .kill { color: #ff9c9c; }
+  #log .star { color: var(--accent); font-weight: bold; }
+
+  /* ---- 統計 ---- */
+  .statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 980px) { .statgrid { grid-template-columns: 1fr; } }
+  canvas.chart { width: 100%; background: var(--panel2); border-radius: 8px; }
+  #progress { height: 8px; background: var(--panel2); border-radius: 4px; overflow: hidden; flex: 1; min-width: 140px; }
+  #progress > div { height: 100%; width: 0%; background: var(--accent); transition: width .15s; }
+  table.matrix { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  table.matrix th, table.matrix td { border: 1px solid var(--line); padding: 9px 11px; text-align: center; }
+  table.matrix th { background: var(--panel2); color: var(--dim); font-weight: normal; }
+  .wr-hi { color: #7dde8b; font-weight: bold; }
+  .wr-lo { color: #ff8d8d; }
+
+  /* ---- 對戰模式 ---- */
+  .vs-setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 980px) { .vs-setup-grid { grid-template-columns: 1fr; } }
+  .builder h3 { display: flex; justify-content: space-between; align-items: baseline; }
+  .builder .count { color: var(--accent); font-weight: bold; }
+  .pool-faction { margin: 8px 0 2px; font-size: 12px; color: var(--dim); }
+  .pool-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .pool-chip {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 8px; font-size: 12px; cursor: pointer; user-select: none;
+    display: flex; gap: 5px; align-items: center;
+  }
+  .pool-chip:hover { border-color: var(--accent); }
+  .pool-chip .cnt { color: var(--accent); font-weight: bold; min-width: 10px; }
+  .pool-chip.maxed { opacity: .4; cursor: default; }
+  .deck-slots { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; min-height: 30px; }
+  .deck-slot {
+    background: rgba(255,197,77,.10); border: 1px solid var(--accent); border-radius: 6px;
+    padding: 4px 8px; font-size: 12px; cursor: pointer; user-select: none;
+  }
+  .deck-slot:hover { background: rgba(255,99,99,.18); border-color: var(--p2); text-decoration: line-through; }
+
+  .vs-grid { display: grid; grid-template-columns: minmax(380px, 520px) 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 980px) { .vs-grid { grid-template-columns: 1fr; } }
+  .handrow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .handcard {
+    background: var(--panel2); border: 2px solid var(--line); border-radius: 8px;
+    padding: 6px 10px; font-size: 12.5px; cursor: pointer; user-select: none; text-align: center;
+  }
+  .handcard:hover { border-color: var(--accent); }
+  .handcard.sel { border-color: var(--accent); background: rgba(255,197,77,.15); }
+  .handcard .hstats { color: var(--dim); font-size: 11px; }
+  .vs-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  #vs-banner {
+    display: none; margin-bottom: 12px; padding: 12px 16px; border-radius: 10px;
+    background: rgba(255,197,77,.12); border: 1px solid var(--accent);
+    font-size: 15px; font-weight: bold;
+  }
+  #vs-hint { color: var(--dim); font-size: 12.5px; margin-top: 8px; line-height: 1.7; }
+  .cell.placeable { border-color: var(--accent); cursor: pointer; }
+  .cell.placeable:hover { background: rgba(255,197,77,.12); }
+  .unit.clickable { cursor: pointer; }
+  .unit.clickable:hover { box-shadow: 0 0 0 2px var(--accent) inset; }
+  #vs-export-wrap { display: none; margin-top: 12px; }
+  #vs-export {
+    width: 100%; height: 220px; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+    font-family: Consolas, monospace; font-size: 11.5px; white-space: pre;
+  }
+
+  /* ---- 套牌說明 ---- */
+  .decks { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .deckcard { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .deckcard h2 { font-size: 17px; margin-bottom: 4px; }
+  .deckcard .tag { font-size: 12px; color: var(--dim); margin-bottom: 12px; }
+  .deckcard ul { list-style: none; margin: 10px 0; }
+  .deckcard li { padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 13.5px; display: flex; gap: 9px; align-items: baseline; }
+  .deckcard li .g { width: 20px; text-align: center; }
+  .deckcard li .nm { min-width: 118px; }
+  .deckcard li .ds { color: var(--dim); font-size: 12px; }
+  .deckcard p { color: var(--dim); font-size: 13px; line-height: 1.7; margin-top: 10px; }
+  .c-blue { color: var(--blue); } .c-red { color: var(--red); } .c-white { color: var(--white); }
+  .c-dkg { color: var(--dkg); } .c-purple { color: var(--purple); }
+  footer { padding: 14px 26px 30px; color: #5d6678; font-size: 11.5px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<header>
+  <h1>午後激盪・套牌對局模擬器</h1>
+  <span class="sub">依 4.0.4.2 版原始碼重實作之戰鬥引擎 | 三大流派 AI 自動對打 | 藍紫中速控制 vs 紅白快攻 vs 墨綠圖騰</span>
+</header>
+
+<nav>
+  <button data-tab="watch" class="active">單場觀戰</button>
+  <button data-tab="versus">對戰模式</button>
+  <button data-tab="advisor">實戰助手</button>
+  <button data-tab="stats">批量統計</button>
+  <button data-tab="decks">套牌與思路</button>
+</nav>
+
+<main>
+  <!-- ============ 觀戰 ============ -->
+  <section id="tab-watch" class="tab active">
+    <div class="controls">
+      <label>先手 (玩家1)</label>
+      <select id="w-deckA"></select>
+      <select id="w-ctlA">
+        <option value="">AI: 自動</option>
+        <option value="sim">模擬器 AI</option>
+        <option value="camp">戰役 AI</option>
+      </select>
+      <label>後手 (玩家2)</label>
+      <select id="w-deckB"></select>
+      <select id="w-ctlB">
+        <option value="">AI: 自動</option>
+        <option value="sim">模擬器 AI</option>
+        <option value="camp">戰役 AI</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:4px">
+        <input type="checkbox" id="w-buffs"> 戰役增益
+      </label>
+      <label>種子</label>
+      <input type="number" id="w-seed" value="42" style="width:96px">
+      <button class="btn" id="w-run">產生對局</button>
+      <button class="btn ghost" id="w-random">隨機種子</button>
+    </div>
+
+    <div class="watch-grid">
+      <div class="boardwrap">
+        <div class="scorebar">
+          <div class="names"><span class="p1c" id="sb-n1">玩家1</span><span id="sb-turn" style="color:var(--dim)"></span><span class="p2c" id="sb-n2">玩家2</span></div>
+          <div class="track"><div class="needle" id="sb-needle" style="left:calc(50% - 2px)"></div></div>
+          <div class="val" id="sb-val">分數 0 (差 10 分獲勝)</div>
+        </div>
+        <div class="board" id="board"></div>
+        <div class="playctrl">
+          <button class="btn ghost" id="p-prev">◀</button>
+          <button class="btn" id="p-play">▶ 播放</button>
+          <button class="btn ghost" id="p-next">▶</button>
+          <input type="range" id="p-slider" min="0" max="0" value="0">
+          <span class="steplabel" id="p-step">0 / 0</span>
+          <label style="font-size:12px">速度</label>
+          <select id="p-speed">
+            <option value="900">慢</option>
+            <option value="450" selected>中</option>
+            <option value="180">快</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="sidecol">
+        <div class="panel">
+          <h3>資源狀態</h3>
+          <div class="res-row"><span class="p1c" id="r-d1"></span></div>
+          <div class="res-row" id="r-p1"></div>
+          <div class="hand-list" id="r-h1"></div>
+          <hr style="border-color:var(--line); margin:10px 0">
+          <div class="res-row"><span class="p2c" id="r-d2"></span></div>
+          <div class="res-row" id="r-p2"></div>
+          <div class="hand-list" id="r-h2"></div>
+        </div>
+        <div class="panel">
+          <h3>戰報</h3>
+          <div id="log"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 對戰模式 ============ -->
+  <section id="tab-versus" class="tab">
+    <!-- 設定畫面 -->
+    <div id="vs-setup">
+      <div class="controls">
+        <label>我的座位</label>
+        <select id="vs-seat">
+          <option value="player1">玩家1 (先手)</option>
+          <option value="player2">玩家2 (後手)</option>
+        </select>
+        <label>對方 AI</label>
+        <select id="vs-oppai">
+          <option value="sim">模擬器 AI (一步模擬)</option>
+          <option value="camp">戰役 AI (campaign 移植)</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="vs-buffs"> 戰役關卡增益
+        </label>
+        <label>種子</label>
+        <input type="number" id="vs-seed" value="0" style="width:96px" title="0 = 隨機">
+        <button class="btn" id="vs-start">開始對戰</button>
+        <span id="vs-setup-msg" style="color:var(--p2);font-size:12.5px"></span>
+      </div>
+      <div class="vs-setup-grid">
+        <div class="panel builder" id="vs-builder-mine">
+          <h3><span>我方套牌</span><span class="count" id="vs-cnt-mine">0/12</span></h3>
+          <div class="controls" style="padding:8px 10px; margin-bottom:8px">
+            <label>載入預設</label>
+            <select id="vs-preset-mine"></select>
+            <button class="btn ghost" id="vs-clear-mine">清空</button>
+          </div>
+          <div id="vs-pool-mine"></div>
+          <div class="deck-slots" id="vs-deck-mine"></div>
+        </div>
+        <div class="panel builder" id="vs-builder-opp">
+          <h3><span>對方套牌 (引擎 AI 操控)</span><span class="count" id="vs-cnt-opp">0/12</span></h3>
+          <div class="controls" style="padding:8px 10px; margin-bottom:8px">
+            <label>載入預設</label>
+            <select id="vs-preset-opp"></select>
+            <button class="btn ghost" id="vs-clear-opp">清空</button>
+          </div>
+          <div id="vs-pool-opp"></div>
+          <div class="deck-slots" id="vs-deck-opp"></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <p style="color:var(--dim);font-size:12.5px;line-height:1.8">
+          規則:每副牌恰好 12 張,同一手下最多 2 張。卡池為模擬器已實作單位 (白/紅/藍/墨綠/橘/綠/紫之已實裝單位,共 52 種);
+          MOVEO 移動魔法已實作 (橘色 APO/TANKO 會生成),HEAL/CUBES 不在卡池。點卡池加入、點套牌中的牌移除。
+          對方 AI 可選「模擬器 AI」(本站的一步模擬決策) 或「戰役 AI」(你的 campaign/ 決策系統移植,
+          會依套牌主色自動套用 白/紅/藍/綠/橘/Boss 對應策略);勾選「戰役關卡增益」可啟用原版關卡 buff
+          (綠 65% 運氣、橘每 3 回合 +1 移動、Boss 單位 +1 血與起手 4 張)。
+        </p>
+      </div>
+    </div>
+
+    <!-- 對局畫面 -->
+    <div id="vs-play" style="display:none">
+      <div id="vs-banner"></div>
+      <div class="vs-grid">
+        <div class="boardwrap">
+          <div class="scorebar">
+            <div class="names"><span class="p1c" id="vs-n1">玩家1</span><span id="vs-turninfo" style="color:var(--dim)"></span><span class="p2c" id="vs-n2">玩家2</span></div>
+            <div class="track"><div class="needle" id="vs-needle" style="left:calc(50% - 2px)"></div></div>
+            <div class="val" id="vs-scoreval"></div>
+          </div>
+          <div class="board" id="vs-board"></div>
+          <div class="handrow" id="vs-hand"></div>
+          <div class="vs-actions">
+            <button class="btn" id="vs-mode-att">⚔ 攻擊模式</button>
+            <button class="btn ghost" id="vs-mode-move">➤ 移動模式</button>
+            <button class="btn" id="vs-endturn">結束回合</button>
+            <button class="btn ghost" id="vs-export-btn">匯出局面 (給你的 AI)</button>
+            <button class="btn ghost" id="vs-restart">重新設定</button>
+          </div>
+          <div id="vs-hint">操作:點手牌選取 → 點空格放置 (MOVEO 點擊直接使用)。攻擊模式下點自己單位 = 出刀;移動模式下點自己單位 = 消耗移動點啟動移動。帶 ➤ 標記的單位為待移動:點它再點相鄰空格即可移動。雙方手牌依規則互見。</div>
+          <div id="vs-export-wrap"><textarea id="vs-export" readonly></textarea></div>
+        </div>
+        <div class="sidecol">
+          <div class="panel">
+            <h3>資源狀態</h3>
+            <div class="res-row"><span class="p1c" id="vs-rd1"></span></div>
+            <div class="res-row" id="vs-rp1"></div>
+            <div class="hand-list" id="vs-rh1"></div>
+            <hr style="border-color:var(--line); margin:10px 0">
+            <div class="res-row"><span class="p2c" id="vs-rd2"></span></div>
+            <div class="res-row" id="vs-rp2"></div>
+            <div class="hand-list" id="vs-rh2"></div>
+          </div>
+          <div class="panel">
+            <h3>戰報</h3>
+            <div id="vs-log" style="height:300px;overflow-y:auto;font-size:12.5px;line-height:1.65;color:var(--dim);white-space:pre-wrap"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 實戰助手 ============ -->
+  <section id="tab-advisor" class="tab">
+    <div class="controls">
+      <label>我的座位</label>
+      <select id="adv-seat">
+        <option value="player1">玩家1 (先手)</option>
+        <option value="player2">玩家2 (後手)</option>
+      </select>
+      <label>搜索強度</label>
+      <select id="adv-beam">
+        <option value="4">快 (束寬4)</option>
+        <option value="6" selected>標準 (束寬6)</option>
+        <option value="10">深 (束寬10)</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:4px">
+        <input type="checkbox" id="adv-auto" checked> 自動刷新
+      </label>
+      <button class="btn ghost" id="adv-refresh">立即刷新</button>
+      <button class="btn ghost" id="adv-demo">示範模式</button>
+      <span id="adv-status" style="color:var(--dim);font-size:12.5px"></span>
+    </div>
+
+    <div class="panel" style="margin-bottom:14px">
+      <p style="color:var(--dim);font-size:12.5px;line-height:1.8" id="adv-howto">
+        使用方式:① 雙擊 deck_sim 裡的 <code style="color:var(--accent)">start_advisor.bat</code>
+        (會開啟兩個黑視窗 advisor-bridge / deck-sim-web 與本頁;監看其他版本時把該遊戲資料夾拖到 bat 上) →
+        ② 開始你的真實對局 (本地 / 戰役 / 連線皆可,連線時本機需為房主) →
+        ③ 此頁即時鏡像盤面;輪到你時自動深度搜索並給出本步最優解,照著下,盤面一變就更新下一步。
+        也可分開啟動:<code style="color:var(--accent)">run_bridge.bat</code> (偵測器) +
+        <code style="color:var(--accent)">run_web.bat</code> (網站)。
+        狀態列顯示「來源 …jsonl・動作 N」即代表已對接;一直顯示「等待橋接器」= bridge 視窗沒開或指錯資料夾。
+        偵測原理:遊戲引擎逐動作寫入 battle_records/*.jsonl (含牌名/座標/傷害),比螢幕視覺辨識精確 —
+        手牌、血量、麻痺零誤差;鏡像含逐動作帳本校正;戰役關卡增益 (Boss+1血/綠65%運氣/橘移動) 會自動複製。
+        注意:遊戲大廳的 file mode 不可設為自動刪除,否則遊戲不寫日誌。
+      </p>
+    </div>
+
+    <div class="vs-grid">
+      <div class="boardwrap">
+        <div class="scorebar">
+          <div class="names"><span class="p1c" id="adv-n1">玩家1</span><span id="adv-turninfo" style="color:var(--dim)"></span><span class="p2c" id="adv-n2">玩家2</span></div>
+          <div class="track"><div class="needle" id="adv-needle" style="left:calc(50% - 2px)"></div></div>
+          <div class="val" id="adv-scoreval"></div>
+        </div>
+        <div class="board" id="adv-board"></div>
+        <div class="panel" style="margin-top:12px">
+          <h3>資源狀態</h3>
+          <div class="res-row"><span class="p1c" id="adv-rd1"></span></div>
+          <div class="res-row" id="adv-rp1"></div>
+          <div class="hand-list" id="adv-rh1"></div>
+          <hr style="border-color:var(--line); margin:10px 0">
+          <div class="res-row"><span class="p2c" id="adv-rd2"></span></div>
+          <div class="res-row" id="adv-rp2"></div>
+          <div class="hand-list" id="adv-rh2"></div>
+        </div>
+      </div>
+      <div class="sidecol">
+        <div class="panel" id="adv-rec-panel">
+          <h3>本步最優解</h3>
+          <div id="adv-warning" style="display:none;margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(255,99,99,.12);border:1px solid var(--p2);font-size:13px"></div>
+          <div id="adv-first" style="font-size:19px;font-weight:bold;color:var(--accent);margin:6px 0 12px">—</div>
+          <h3>完整回合計畫</h3>
+          <ol id="adv-plan" style="font-size:13.5px;line-height:1.9;padding-left:20px;color:var(--text)"></ol>
+          <div id="adv-alts" style="color:var(--dim);font-size:12.5px;margin-top:8px"></div>
+          <div id="adv-searchmeta" style="color:#5d6678;font-size:11.5px;margin-top:8px"></div>
+        </div>
+        <div class="panel">
+          <h3>對局事件</h3>
+          <div id="adv-events" style="height:180px;overflow-y:auto;font-size:12.5px;line-height:1.6;color:var(--dim);white-space:pre-wrap"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 統計 ============ -->
+  <section id="tab-stats" class="tab">
+    <div class="controls">
+      <label>模式</label>
+      <select id="s-mode">
+        <option value="matrix">全對戰矩陣 (3 組)</option>
+        <option value="single">單一對戰組合</option>
+      </select>
+      <span id="s-pair-wrap" style="display:none">
+        <select id="s-deckA"></select>
+        <select id="s-ctlA">
+          <option value="">AI: 自動</option>
+          <option value="sim">模擬器 AI</option>
+          <option value="camp">戰役 AI</option>
+        </select>
+        <span style="color:var(--dim)"> vs </span>
+        <select id="s-deckB"></select>
+        <select id="s-ctlB">
+          <option value="">AI: 自動</option>
+          <option value="sim">模擬器 AI</option>
+          <option value="camp">戰役 AI</option>
+        </select>
+      </span>
+      <label>每組場數</label>
+      <input type="number" id="s-n" value="300" min="20" max="2000" step="20" style="width:90px">
+      <button class="btn" id="s-run">開始模擬</button>
+      <div id="progress"><div></div></div>
+      <span id="s-status" style="color:var(--dim);font-size:12.5px"></span>
+    </div>
+
+    <div class="panel" id="s-matrix-panel" style="margin-bottom:16px; display:none">
+      <h3>勝率矩陣 (列 = 該套牌對上欄套牌的勝率;每組對戰先後手各半)</h3>
+      <div id="s-matrix"></div>
+    </div>
+
+    <div class="statgrid">
+      <div class="panel"><h3 id="c1-title">勝率</h3><canvas id="chart-bars" class="chart" height="240"></canvas></div>
+      <div class="panel"><h3>平均分數走勢 (正 = 左方套牌領先)</h3><canvas id="chart-curve" class="chart" height="240"></canvas></div>
+      <div class="panel"><h3>對局長度分佈 (輪)</h3><canvas id="chart-hist" class="chart" height="240"></canvas></div>
+      <div class="panel"><h3>重點數據</h3><div id="s-notes" style="font-size:13.5px; line-height:2; color:var(--dim)"></div></div>
+    </div>
+  </section>
+
+  <!-- ============ 套牌 ============ -->
+  <section id="tab-decks" class="tab">
+    <div class="decks" id="deckcards"></div>
+    <div class="panel" style="margin-top:16px">
+      <h3>模擬器忠實度說明</h3>
+      <p style="color:var(--dim); font-size:13px; line-height:1.8">
+        引擎依遊戲 4.0.4.2 版原始碼重實作:傷害結算管線 (護甲 → 溢出 → 斬殺鏈)、麻痺 (進場麻痺、刺客除外、結算時清除並不得分)、
+        天秤計分 (差 10 分獲勝)、刀數銀行、棄牌堆循環抽牌、藍球引擎 (每 3 球抽 1 張、ADCB 免費攻擊/解麻痺、TANKB 被打產球)、
+        APR 100% 攻擊偷取與 SPR 增益疊加、圖騰刻印與 SPDKG 翻倍、APTDKG 護盾↔刻印循環、SPB 進場隨機轟炸 (場上+棄牌堆次數)、
+        HFP 九宮格補刀。<br><br>
+        AI (v3) 決策方式:<b>出刀與放置都在複製棋局上真實模擬執行</b> (含藍球連鎖、攻擊偷取、免費攻擊、進場效果),
+        以盤面評估函數挑出最優一手。評估函數包含:<b>敵方輸出投影</b> (依對方刀數與攻擊模式,計算對手下回合最多能造成的傷害/麻痺/偷取,
+        因此麻痺對方主攻手 = 同時否定其得分與輸出)、<b>角色價值表</b> (APR、APDKG 等引擎單位的擊殺與保護優先度高於白板單位)、
+        <b>餵對方資源的代價</b> (打 TANKB/TANKDKG 會餵球/刻印,模擬會看到)。
+        另依「<b>雙方手牌互見</b>」規則讀取對方手牌,並以流派牌表<b>記牌</b>推算對方牌庫剩餘——
+        敵方手握刺客時,脆皮單位迴避斜角敞開的格子;刺客只在牌庫時按抽出機率佈防。
+        每回合先做<b>致勝判定</b> (本回合結算可獲勝→直接收尾) 與<b>致敗判定</b> (對手下次結算將獲勝→拚死一搏:
+        傾倒手牌、刀全花、優先否定對方得分);只有局面從容時才保留 1 刀,落後一律全力輸出。
+        AI 仍非窮舉最佳解,但相對強弱趨勢具參考性。<br><br>
+        <b>戰役 AI (campaign 移植)</b>:另一套可選的對手 AI,逐函數移植自遊戲新版 repo 的
+        campaign/ 模組 (ai_evaluator / ai_query / ai_controller / 六個派系策略 / boss_config):
+        評分驅動的單動作決策 (擊殺 +100、跟刀斬殺鏈、廢刀懲罰、刺客手牌威懾、保鏢檢查、進襲傷害投影)、
+        落後時出刀門檻隨分差遞減、橘色完整移動鏈。引擎為此補齊了橘色 (攻擊後移動、MOVEO)、
+        綠色 (幸運值、幸運方塊)、移動與幸運系統,並跟進新版平衡 (ADCB 擊殺藍球 2→1)。
+        在「單場觀戰 / 批量統計 / 對戰模式」皆可指定任一方由戰役 AI 操控。
+      </p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  午後激盪 (Afternoon Brainstorming) © Robin Liu, Angus Yu / Five O'clock Shadow Studio (GPL v3)。
+  本模擬器為非官方研究工具,直接以瀏覽器開啟本檔即可使用,無需網路。
+</footer>
+
+<script src="engine.js"></script>
+<script src="campaign_ai.js"></script>
+<script src="ai.js"></script>
+<script src="search.js"></script>
+<script src="app.js"></script>
+<script src="versus.js"></script>
+<script src="advisor.js"></script>
+</body>
+</html>
